@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--gamma", type=float)
 parser.add_argument("--h", type = float, help="Stepsize")
-parser.add_argument("--root", type = float, help="Root directory for saving results")
+parser.add_argument("--root", type = str, help="Root directory for saving results")
 parser.add_argument("--k", type = float, help="Kb T for ")
 args = parser.parse_args()
 import os
