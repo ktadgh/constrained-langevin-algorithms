@@ -52,7 +52,7 @@ def j_torchfun(x):
   return fun(x[0],x[1],x[2])
 
 def J(xs):
-  return np.transpose(np.apply_along_axis(torchfun, axis=1, arr=xs), (0,2,1))
+  return np.transpose(np.apply_along_axis(torchfun, axis=1, arr=xs), (0,2,1)).astype(float)
 
 
 
