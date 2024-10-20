@@ -99,7 +99,7 @@ def loss(model, xp,eps=1e-5):
 
   return loss.mean(), score, sim_xp
 
-my_dataset = torch.load('fire_qps.pth').float()
+my_dataset = torch.load('data/fire_qps.pth').float()
 
 
 ####### Main training loop #######
