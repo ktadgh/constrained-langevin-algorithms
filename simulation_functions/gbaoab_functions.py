@@ -28,6 +28,33 @@ from mpl_toolkits.mplot3d import Axes3D
 
 import os
 
+import sympy as sp
+x,y,z =sp.symbols('x,y,z', real=True)
+
+f = sp.Matrix([[x**2 + y**2 + z**2 -1]])
+j = f.jacobian([x,y,z])
+to_invert = f.jacobian([x,y,z]).multiply(f.jacobian([x,y,z]).T)
+projector1 = sp.eye(3) - f.jacobian([x,y,z]).T @ to_invert.inv() @ f.jacobian([x,y,z])
+
+fun = sp.lambdify((x,y,z),projector1, "numpy") 
+
+def torchfun(x):
+  return fun(x[0],x[1],x[2])
+
+def projector(xs):
+  return np.apply_along_axis(torchfun, axis=1, arr=xs)
+
+j = f.jacobian([x,y,z])
+
+j_fun = sp.lambdify((x,y,z),j, "numpy") 
+
+def j_torchfun(x):
+  return fun(x[0],x[1],x[2])
+
+def J(xs):
+  return np.apply_along_axis(torchfun, axis=1, arr=xs)
+
+
 
 def G_(gs):
     '''
@@ -42,11 +69,11 @@ def G_(gs):
     return G_gs
 
 
-def J(gs,x):
-  func = G_(gs)
-  def _func_sum(x):
-    return func(x).sum(dim=0)
-  return jacobian(_func_sum, x, create_graph=False).permute(1,0,2)
+# def J(gs,x):
+#   func = G_(gs)
+#   def _func_sum(x):
+#     return func(x).sum(dim=0)
+#   return jacobian(_func_sum, x, create_graph=False).permute(1,0,2)
 
 
 
@@ -76,16 +103,13 @@ def rattle_step(x, v1, h, M, gs, e):
     x2 = x_col + h * v1_col - 0.5*(h**2)* torch.bmm(M, DV_col)
     Q_col = x2
     Q = torch.squeeze(Q_col)
-    J1 = J(gs, torch.squeeze(x_col))
+    J1 = torch.tensor(J(torch.squeeze(x_col).detach().cpu())).cuda()
 
     diff = torch.tensor([1.]).cuda()
-    initial_q = Q_col
-    initial_v = v1_col
     steps =0
-    limit = ((Q_col**2).sum(dim=1).max() -1).abs()
 
     for _ in range(4):
-        J2 = J(gs, torch.squeeze(Q))
+        J2 = torch.tensor(J(torch.squeeze(Q).detach().cpu())).cuda()
         R = torch.bmm(torch.bmm(J2,M),J1.mT)
         dL = torch.bmm(torch.linalg.inv(R),G1(Q).unsqueeze(-1))
         diff = torch.bmm(torch.bmm(M,J1.mT), dL)
@@ -96,10 +120,10 @@ def rattle_step(x, v1, h, M, gs, e):
     Q_col = Q.reshape(batch_size,-1,1)
     v1_half = (Q_col - x_col)/h
     x_col = Q_col
-    J1 = J(gs, torch.squeeze(x_col))
+    J1 = torch.tensor(J(torch.squeeze(x_col).detach().cpu())).cuda()
 
     # getting the level
-    J2 = J(gs, torch.squeeze(Q))
+    J2 = torch.tensor(J(torch.squeeze(Q).detach().cpu())).cuda()
     P = torch.bmm(torch.bmm(J1, M),J1.mT)
     T = torch.bmm(J1, (2/h * v1_half - torch.bmm(M, DV_col)))
 
@@ -140,7 +164,7 @@ def gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
 
 
     # the second p-update - (O-step in BAOAB)
-    J2 = J(gs,q)
+    J2 = torch.tensor(J(torch.squeeze(q).detach().cpu())).cuda()
     G = J2
     to_invert=torch.bmm(G, torch.bmm(M1,torch.transpose(G,-1,-2)))
     # raise ValueError(to_invert.diagonal(dim1=-2,dim2=-1))
@@ -155,7 +179,7 @@ def gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
 
 
     # the final p update
-    J3= J(gs,q).cuda()
+    J3= torch.tensor(J(torch.squeeze(q).detach().cpu())).cuda()
     G = J3
 
     qp = torch.cat([q,p], dim = 1)
@@ -197,8 +221,7 @@ def gBAOAB_integrator_retain(q_init,p_init,F, gs, h,M, gamma, k, steps,kr,e):
 
 def cotangent_projection(gs):
     def proj(x):
-        G = J(gs,x).cuda()
-
+        G = torch.tensor(J(torch.squeeze(x).detach().cpu())).cuda()
         M = torch.eye(G.size()[2]).cuda().broadcast_to(x.shape[0],G.size()[2],G.size()[2]).cuda()
         b1 = torch.bmm(G,M)
         b2 = G.mT
@@ -314,10 +337,9 @@ def reverse_gBAOAB_integrator(q_init,p_init,score_model, gs, h,M, gamma, k, step
         with torch.no_grad():
           x= score_model(x, t/300, L, G)
         return x.detach()
+      
       q, p = reverse_gBAOAB_step(q, p, proj_score, gs, h,M, gamma, k, kr,e)
 
       qs.append(q)
-      # if i % 100 == 0:
-      #   graph_points(q,i, alpha= 0.01)
 
     return qs
