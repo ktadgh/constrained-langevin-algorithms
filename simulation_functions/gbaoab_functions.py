@@ -52,7 +52,7 @@ def j_torchfun(x):
   return fun(x[0],x[1],x[2])
 
 def J(xs):
-  return np.transpose(np.apply_along_axis(torchfun, axis=1, arr=xs), (0,2,1)).astype(float)
+  return torch.tensor(np.transpose(np.apply_along_axis(torchfun, axis=1, arr=xs), (0,2,1)).astype(float), dtype= torch.float32)
 
 
 
@@ -103,13 +103,13 @@ def rattle_step(x, v1, h, M, gs, e):
     x2 = x_col + h * v1_col - 0.5*(h**2)* torch.bmm(M, DV_col)
     Q_col = x2
     Q = torch.squeeze(Q_col)
-    J1 = torch.tensor(J(torch.squeeze(x_col).detach().cpu())).cuda()
+    J1 = ((torch.squeeze(x_col).detach().cpu())).cuda()
 
     diff = torch.tensor([1.]).cuda()
     steps =0
 
     for _ in range(4):
-        J2 = torch.tensor(J(torch.squeeze(Q).detach().cpu())).cuda()
+        J2 = (torch.squeeze(Q).detach().cpu())).cuda()
         R = torch.bmm(torch.bmm(J2,M),J1.mT)
         dL = torch.bmm(torch.linalg.inv(R),G1(Q).unsqueeze(-1))
         diff = torch.bmm(torch.bmm(M,J1.mT), dL)
@@ -120,10 +120,10 @@ def rattle_step(x, v1, h, M, gs, e):
     Q_col = Q.reshape(batch_size,-1,1)
     v1_half = (Q_col - x_col)/h
     x_col = Q_col
-    J1 = torch.tensor(J(torch.squeeze(x_col).detach().cpu())).cuda()
+    J1 = (torch.squeeze(x_col).detach().cpu())).cuda()
 
     # getting the level
-    J2 = torch.tensor(J(torch.squeeze(Q).detach().cpu())).cuda()
+    J2 = (torch.squeeze(Q).detach().cpu())).cuda()
     P = torch.bmm(torch.bmm(J1, M),J1.mT)
     T = torch.bmm(J1, (2/h * v1_half - torch.bmm(M, DV_col)))
 
@@ -148,7 +148,7 @@ def gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
 
 
     # doing the initial p-update
-    J1 = torch.tensor(J(torch.squeeze(q).detach().cpu())).cuda()
+    J1 = (torch.squeeze(q).detach().cpu())).cuda()
     G = J1
     to_invert = torch.bmm(torch.bmm(G, M1), torch.transpose(G,-2,-1))
 
@@ -164,7 +164,7 @@ def gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
 
 
     # the second p-update - (O-step in BAOAB)
-    J2 = torch.tensor(J(torch.squeeze(q).detach().cpu())).cuda()
+    J2 = (torch.squeeze(q).detach().cpu())).cuda()
     G = J2
     to_invert=torch.bmm(G, torch.bmm(M1,torch.transpose(G,-1,-2)))
     # raise ValueError(to_invert.diagonal(dim1=-2,dim2=-1))
@@ -179,7 +179,7 @@ def gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
 
 
     # the final p update
-    J3= torch.tensor(J(torch.squeeze(q).detach().cpu())).cuda()
+    J3= (torch.squeeze(q).detach().cpu())).cuda()
     G = J3
 
     qp = torch.cat([q,p], dim = 1)
@@ -221,7 +221,7 @@ def gBAOAB_integrator_retain(q_init,p_init,F, gs, h,M, gamma, k, steps,kr,e):
 
 def cotangent_projection(gs):
     def proj(x):
-        G = torch.tensor(J(torch.squeeze(x).detach().cpu())).cuda()
+        G = (torch.squeeze(x).detach().cpu())).cuda()
         M = torch.eye(G.size()[2]).cuda().broadcast_to(x.shape[0],G.size()[2],G.size()[2]).cuda()
         b1 = torch.bmm(G,M)
         b2 = G.mT
