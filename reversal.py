@@ -415,55 +415,6 @@ def loss(model, xp,eps=1e-5):
 
   return loss.mean(), score, sim_xp
 
-my_dataset = torch.load('qps.pth')
-
-
-## size of a mini-batch
-## learning rate
-lr=1e-3 #@param {'type':'number'}
-batch_size =  512 #@param {'type':'integer'}
-
-
-score_model.load_state_dict(torch.load('/notebooks/proper-fire-training/model_ep99.pth'))
-## learning rate
-dataloader = DataLoader(my_dataset,batch_size=batch_size, shuffle=True)
-n_epochs = 0
-tqdm_epoch = nbk.trange(n_epochs)
-optimizer = Adam(score_model.parameters(), lr=lr)
-i = 0
-epoch_losses =[]
-corrs = []
-epoch_no = 0
-for epoch in tqdm_epoch:
-    t_dl =nbk.tqdm(dataloader)
-    avg_loss = 0.
-    num_items = 0
-    for pw in t_dl:
-        x = pw.cuda()
-        i += 1
-        loss_val,score,sim_xp = loss(score_model, x)
-        t_dl.set_description(f"Loss = {loss_val.item()}")
-        loss_val.backward()
-
-        # Gradient accumulation so that we have multiple times in each gradient step
-        if i % 5 == 0:
-          optimizer.step()
-          optimizer.zero_grad()
-          # break
-        avg_loss += loss_val.item() * x.shape[0]
-        num_items += x.shape[0]
-        # if i%5 == 0:
-        #   epoch_losses.append(avg_loss / num_items)
-        #   # torch.save(score_model.state_dict(), f'model_checkpoint_ep{epoch}_step{i}.pth')
-        #   torch.save(epoch_losses, 'epoch-losses-withskip-fixed.pth')
-        #   make_velocity_graph(my_dataset,epoch_no, corrs)
-        #   epoch_no +=1
-        #   corrs_tensor = torch.tensor(corrs)
-        #   torch.save(corrs_tensor, 'correlations-withskip-fixed.pth')
-    epoch_losses.append(avg_loss / num_items)
-    torch.save(score_model.state_dict(), f'model_checkpoint_correct_ep{epoch}.pth')
-    torch.save(epoch_losses, 'epoch-losses-training.pth')
-    
 def J_keep(gs,x):
   func = G_(gs)
   # raise ValueError(x, gs[0](x),gs[1](x), gs[2](x))
@@ -481,19 +432,27 @@ def projector(gs,q):
   L1 = torch.eye(q.shape[1]).cuda() - torch.bmm(torch.transpose(G,-2,-1),t2)
   return L1
 
-from functools import partial
+import sympy as sp
+x,y,z =sp.symbols('x,y,z', real=True)
 
-def divergence(gs,x): # calculates the matrix divergence of the projector matrix at x
-    partial_projector = partial(projector, gs)
-    J = torch.autograd.functional.jacobian(partial_projector, x) # batch, o1, o2, batch, i1
-    J = J.permute(1,2,4,0,3)
-    J = torch.diagonal(J, dim1=3, dim2=4) # o1, o2, i1, batch
+f = sp.Matrix([[x**2 + y**2 + z**2 -1]])
+j = f.jacobian([x,y,z])
+to_invert = f.jacobian([x,y,z]).multiply(f.jacobian([x,y,z]).T)
+projector1 = sp.eye(3) - f.jacobian([x,y,z]).T @ to_invert.inv() @ f.jacobian([x,y,z])
 
-    J = J.permute(3,0,1,2) # batch, o1, o2, i1
+pjs = []
+for i in range(0,projector1.shape[0]):
+  pjs.append(projector1[i,:].jacobian([x,y,z]).trace())
+traces_matrix = sp.Matrix(pjs)
 
-    J = torch.diagonal(J, dim1=2, dim2=3) # batch, o1, o2i1
+fun = sp.lambdify((x,y,z),traces_matrix, "numpy") 
 
-    return J.sum(dim = 2)
+def torchfun(x):
+  return fun(x[0],x[1],x[2])
+
+def divergence(xs):
+  return np.apply_along_axis(torchfun, axis=1, arr=xs)
+
 
 def reverse_gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
     # setting up variables
@@ -516,7 +475,8 @@ def reverse_gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
     L1 = torch.eye(q_init.shape[1]).cuda() - torch.bmm(torch.transpose(G,-2,-1),t2)
 
     qp = torch.cat([q,p], dim = 1)
-    d = divergence(gs, q)
+    qc = q.detach().cpu().numpy()
+    d = torch.tensor(divergence(qc), device='cuda').squeeze().float()
 
     p = p + torch.bmm(L1, 2*gamma*d.unsqueeze(-1)).squeeze(-1)*(h/2)
 
@@ -549,7 +509,8 @@ def reverse_gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
     # the final p update
     J3= J(gs,q).cuda()
     G = J3
-    d = divergence(gs, q)
+    qc = q.detach().cpu().numpy()
+    d = torch.tensor(divergence(qc), device='cuda').squeeze().float()
     qp = torch.cat([q,p], dim = 1)
     L3 = torch.eye(q_init.shape[1]).cuda() - torch.bmm(torch.bmm(torch.bmm(torch.transpose(G,-2,-1), torch.inverse(G@ M1@ torch.transpose(G,-2,-1))), G), M1)
     p = p + torch.bmm(L3, 2*gamma*d.unsqueeze(-1)).squeeze(-1)*(h/2)
@@ -581,8 +542,8 @@ def reverse_gBAOAB_integrator(q_init,p_init,F, gs, h,M, gamma, k, steps,kr,e):
 
     return qs
 
-theta = torch.acos(2*torch.rand(50)-1)
-phi = torch.rand(50)*2*torch.pi
+theta = torch.acos(2*torch.rand(2_000)-1)
+phi = torch.rand(2_000)*2*torch.pi
 
 x = torch.sin(phi) * torch.cos(theta)
 y = torch.sin(phi) * torch.sin(theta)
@@ -602,4 +563,4 @@ for _ in range(100):
     qs = reverse_gBAOAB_integrator(q,p,F, gs, 0.05,M, 1, 0.001,3_00,10,1e-10)
     my_qs.append(qs[-1])
     torch_qs = torch.stack(my_qs)
-    torch.save(torch_qs, '/notebooks/proper-fire-training/my_qs.pt')
+    torch.save(torch_qs, 'proper-fire-training/my_qs.pt')
