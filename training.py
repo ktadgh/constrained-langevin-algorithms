@@ -36,34 +36,6 @@ parser.add_argument("--k", type = float, help="Kb T for ")
 args = parser.parse_args()
 import os
 
-def G_(gs):
-    '''
-    each g in gs should act on batches, eg lambda x: (x[:,0] -  x[:,1])**2
-    :param gs: a list of tensor functions
-    :return: a function sending a tensor to the stacked matrix of the functions of that tensor
-    '''
-    def G_gs(tensor):
-        x = tensor
-        # raise ValueError(torch.stack([g(x) for g in gs], 1).shape)
-        return torch.stack([g(x) for g in gs], 1)
-    return G_gs
-
-
-def J1(gs, x):
-    '''Returns the Jacobian evaluated at x for a list gs of constraint functions'''
-    jac_batched = jacobian(G(gs), x) # shape (fns, batch_size, batch_size, dims)
-
-    r = jac_batched.permute(1, 3, 0, 2).diagonal(dim1=-2, dim2=-1).permute(2, 0, 1)
-    return r
-
-
-def J(gs,x):
-  func = G_(gs)
-  # raise ValueError(x, gs[0](x),gs[1](x), gs[2](x))
-  # x in shape (Batch, Length)
-  def _func_sum(x):
-    return func(x).sum(dim=0)
-  return jacobian(_func_sum, x, create_graph=False).permute(1,0,2)
 
 
 
@@ -608,12 +580,3 @@ z = torch.cos(phi)
 q = torch.stack([x,y,z], dim=1).cuda()
 p = torch.zeros_like(q).cuda()
 M = torch.eye(q.shape[1]).broadcast_to(q.shape[0], q.shape[1],q.shape[1]).cuda()
-
-
-
-my_qs = []
-for _ in range(100):
-    qs = reverse_gBAOAB_integrator(q,p,F, gs, 0.0025,M, 1, 0.001,6_00,10,1e-10)
-    my_qs.append(qs[-1])
-    torch_qs = torch.stack(my_qs)
-    torch.save(torch_qs, 'my_qs.pt')

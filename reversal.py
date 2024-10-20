@@ -560,7 +560,7 @@ M = torch.eye(q.shape[1]).broadcast_to(q.shape[0], q.shape[1],q.shape[1]).cuda()
 
 my_qs = []
 for _ in range(100):
-    qs = reverse_gBAOAB_integrator(q,p,F, gs, 0.05,M, 1, 0.001,3_00,10,1e-10)
+    qs = reverse_gBAOAB_integrator(q,p,F, gs, 0.01,M, 1, 0.001,15_00,2,1e-10)
     my_qs.append(qs[-1])
     torch_qs = torch.stack(my_qs)
-    torch.save(torch_qs, 'proper-fire-training/my_qs.pt')
+    torch.save(torch_qs, 'proper-fire-training/my_qs_1500.pt')
