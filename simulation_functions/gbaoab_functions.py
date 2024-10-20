@@ -148,7 +148,7 @@ def gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
 
 
     # doing the initial p-update
-    J1 = J(gs,q)
+    J1 = torch.tensor(J(torch.squeeze(q).detach().cpu())).cuda()
     G = J1
     to_invert = torch.bmm(torch.bmm(G, M1), torch.transpose(G,-2,-1))
 
