@@ -52,7 +52,7 @@ def j_torchfun(x):
   return fun(x[0],x[1],x[2])
 
 def J(xs):
-  return np.apply_along_axis(torchfun, axis=1, arr=xs)
+  return np.transpose(np.apply_along_axis(torchfun, axis=1, arr=xs), (0,2,1))
 
 
 
@@ -150,7 +150,6 @@ def gBAOAB_step(q_init,p_init,F, gs, h,M, gamma, k, kr,e):
     # doing the initial p-update
     J1 = torch.tensor(J(torch.squeeze(q).detach().cpu())).cuda()
     G = J1
-    raise ValueError(G.shape)
     to_invert = torch.bmm(torch.bmm(G, M1), torch.transpose(G,-2,-1))
 
     t2 = torch.bmm(torch.inverse(to_invert), torch.bmm(G , M1))
