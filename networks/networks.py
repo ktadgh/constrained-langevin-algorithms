@@ -1,3 +1,7 @@
+import torch
+from torch import nn
+from simulation_functions.gbaoab_functions import create_constraints, cotangent_projection, gBAOAB_integrator
+
 class GaussianFourierProjection(nn.Module):
   """Gaussian random features for encoding time steps."""
   def __init__(self, embed_dim, scale=30.):
@@ -42,3 +46,43 @@ class ScoreNet(nn.Module):
       p = torch.squeeze(L@ torch.unsqueeze(h-p,-1),-1)
       return p
 
+
+def loss(model, xp,eps=1e-5):
+  """The loss function for training score-based generative models.
+
+  Args:
+    model: A PyTorch model instance that represents a
+      time-dependent score-based model.
+    x: A mini-batch of training data.
+    marginal_prob_std: A function that gives the standard deviation of
+      the perturbation kernel.
+    eps: A tolerance value for numerical stability.
+  """
+
+  # x is the batch of simulated qps that we need to noise.
+  gs = create_constraints()
+
+  # projection matrix
+  L_fn = cotangent_projection(gs)
+
+  x = xp[:,:3]
+  p = xp[:,3:]
+  random_t = torch.round((torch.rand(1, device=x.device)**1.75)*(300))
+
+  # Noising
+
+  M = torch.eye(x.shape[1]).broadcast_to(x.shape[0], x.shape[1],x.shape[1]).cuda()
+
+  h = 0.05
+  k = 0.001
+  gamma = 1
+
+  def force(x):
+    return torch.zeros_like(x)
+
+  sim_xp = gBAOAB_integrator(x,p,force, gs, h,M, gamma, k, int(random_t.item()),1,10**(-13))
+  t_o = int(random_t.item())
+  L , G = L_fn(sim_xp[:,:3]) # defining the projection matrix using only the position, not velocity
+  # raise ValueError(L.shape,G.shape)
+
+  score = model(sim_xp, random_t/300,L,G).cuda()
